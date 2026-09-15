@@ -2,6 +2,8 @@ import {
   DEFAULT_API_URL,
   DEFAULT_MAX_BITRATE_KBPS,
   DEFAULT_POLL_INTERVAL_SEC,
+  DEFAULT_RTSP_PORT,
+  DEFAULT_WATCH_PLAYER,
 } from "./constants.ts";
 
 export type ApiAuth =
@@ -10,6 +12,8 @@ export type ApiAuth =
 
 export type Config = {
   apiUrl: string;
+  rtspUrl: string;
+  watchPlayer: string;
   pollIntervalMs: number;
   maxBitrateBps: number;
   apiAuth: ApiAuth | null;
@@ -53,6 +57,11 @@ function loadApiAuth(): ApiAuth | null {
   return { scheme: "basic", username, password };
 }
 
+function defaultRtspUrl(apiUrl: string): string {
+  const parsed = new URL(apiUrl);
+  return `rtsp://${parsed.hostname}:${DEFAULT_RTSP_PORT}`;
+}
+
 function loadPathIncludeRegex(): RegExp | null {
   const pattern = Bun.env.PATH_INCLUDE_REGEX?.trim();
   if (!pattern) {
@@ -80,9 +89,17 @@ export function loadConfig(): Config {
   );
 
   const apiUrl = (Bun.env.MTX_API_URL ?? DEFAULT_API_URL).replace(/\/$/, "");
+  const rtspUrl = (Bun.env.MTX_RTSP_URL ?? defaultRtspUrl(apiUrl)).replace(
+    /\/$/,
+    "",
+  );
+  const watchPlayer =
+    Bun.env.WATCH_PLAYER?.trim() || DEFAULT_WATCH_PLAYER;
 
   return {
     apiUrl,
+    rtspUrl,
+    watchPlayer,
     pollIntervalMs: pollIntervalSec * 1000,
     maxBitrateBps: maxBitrateKbps * 1000,
     apiAuth: loadApiAuth(),

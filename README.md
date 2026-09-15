@@ -22,6 +22,8 @@ Copy `.env.example` to `.env`:
 | `MTX_API_PASSWORD` | — | Basic auth password |
 | `MTX_API_TOKEN` | — | Bearer token for JWT auth (overrides basic if set) |
 | `PATH_INCLUDE_REGEX` | — | Only enforce paths whose name matches this regex |
+| `MTX_RTSP_URL` | `rtsp://<api-host>:8554` | RTSP base URL for stream watch |
+| `WATCH_PLAYER` | `ffplay` | Player binary (`ffplay` from ffmpeg) |
 | `POLL_INTERVAL_SEC` | `3` | Poll interval in seconds |
 | `MAX_BITRATE_KBPS` | `5000` | Max allowed publisher bitrate in kbps |
 
@@ -43,7 +45,14 @@ bun install
 bun run index.ts
 ```
 
-Default launch opens a Rezi TUI dashboard. Press `q` to quit.
+Default launch opens a Rezi TUI dashboard.
+
+| Key | Action |
+|-----|--------|
+| `←` / `→` | Switch between Enforced and Other publishers sections |
+| `w` | Watch selected path with ffmpeg/ffplay |
+| `k` | Kick selected path (confirmation dialog) |
+| `q` | Quit |
 
 Headless console mode (original log output):
 

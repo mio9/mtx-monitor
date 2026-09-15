@@ -21,6 +21,8 @@ export const KICK_ENDPOINTS: Partial<Record<PathSourceType, string>> = {
 };
 
 export const DEFAULT_API_URL = "http://127.0.0.1:9997";
+export const DEFAULT_RTSP_PORT = 8554;
 export const DEFAULT_POLL_INTERVAL_SEC = 3;
 export const DEFAULT_MAX_BITRATE_KBPS = 5000;
+export const DEFAULT_WATCH_PLAYER = "ffplay";
 export const PATHS_PAGE_SIZE = 100;
