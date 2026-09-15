@@ -84,7 +84,7 @@ export function renderDashboard(state: DashboardState) {
   const errorText = snapshot.pollError ?? "";
 
   return ui.column({ gap: 1, p: 1 }, [
-    ui.text("mtx-kicker", { style: { bold: true } }),
+    ui.text("mtx-watcher", { style: { bold: true } }),
     ui.statusBar({
       id: "status-bar",
       left: [

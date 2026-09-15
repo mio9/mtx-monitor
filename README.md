@@ -1,4 +1,4 @@
-# mtx-kicker
+# mtx-watcher
 
 Polls MediaMTX Control API, tracks publisher bitrate from byte counters, kicks sessions over limit.
 

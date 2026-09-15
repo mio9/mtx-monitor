@@ -72,7 +72,7 @@ export async function runCli(config: Config): Promise<void> {
   const tracker = new BitrateTracker();
 
   console.log(
-    `mtx-kicker started: api=${config.apiUrl} ${authLabel(config)} ${pathFilterLabel(config)} poll=${config.pollIntervalMs}ms limit=${formatBitrate(config.maxBitrateBps)}`,
+    `mtx-watcher started: api=${config.apiUrl} ${authLabel(config)} ${pathFilterLabel(config)} poll=${config.pollIntervalMs}ms limit=${formatBitrate(config.maxBitrateBps)}`,
   );
 
   let running = true;
@@ -96,5 +96,5 @@ export async function runCli(config: Config): Promise<void> {
     await Bun.sleep(config.pollIntervalMs);
   }
 
-  console.log("mtx-kicker stopped");
+  console.log("mtx-watcher stopped");
 }
