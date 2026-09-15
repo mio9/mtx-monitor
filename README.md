@@ -43,4 +43,17 @@ bun install
 bun run index.ts
 ```
 
+Default launch opens a Rezi TUI dashboard. Press `q` to quit.
+
+Headless console mode (original log output):
+
+```bash
+bun run index.ts --noui
+```
+
+### Dashboard sections
+
+- **Enforced** — paths matched by `PATH_INCLUDE_REGEX` (or all publishers when unset). Over-limit sessions are flagged and kicked.
+- **Other publishers** — active publisher paths not matched by the regex. Shown for visibility only; over-limit sessions are flagged but not kicked.
+
 Bitrate = delta `inboundBytes` between polls. Supported publisher types: RTSP, RTMP, SRT, WebRTC.
