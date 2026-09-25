@@ -7,9 +7,14 @@ import { runPollCycle, type SessionRow } from "../poll.ts";
 import { watchStream } from "../watch.ts";
 import {
   createInitialState,
+  cycleDashboardSection,
   getSelectedRow,
+  isPublisherSection,
   pruneSelections,
-  type DashboardSection,
+  prepareViewerGroups,
+  toggleViewerPathCollapsed,
+  toggleViewerPathPinned,
+  pruneViewerUi,
   type DashboardState,
 } from "./state.ts";
 import { renderDashboard, type DashboardHandlers } from "./view.ts";
@@ -73,6 +78,58 @@ export async function runTui(config: Config): Promise<void> {
         actionMessage: null,
       }));
     },
+    onViewerFilterChange: (query) => {
+      app.update((previous) => {
+        const viewerUi = {
+          ...previous.viewerUi,
+          filterQuery: query,
+        };
+        const visibleGroups = prepareViewerGroups(
+          previous.snapshot.viewers,
+          viewerUi,
+        );
+        const selectedPathName =
+          viewerUi.selectedPathName &&
+          visibleGroups.some(
+            (group) => group.pathName === viewerUi.selectedPathName,
+          )
+            ? viewerUi.selectedPathName
+            : (visibleGroups[0]?.pathName ?? null);
+
+        return {
+          ...previous,
+          viewerUi: {
+            ...viewerUi,
+            selectedPathName,
+          },
+          actionMessage: null,
+        };
+      });
+    },
+    onViewerSelectPath: (pathName) => {
+      app.update((previous) => ({
+        ...previous,
+        viewerUi: {
+          ...previous.viewerUi,
+          selectedPathName: pathName,
+        },
+        actionMessage: null,
+      }));
+    },
+    onViewerToggleCollapse: (pathName) => {
+      app.update((previous) => ({
+        ...previous,
+        viewerUi: toggleViewerPathCollapsed(previous.viewerUi, pathName),
+        actionMessage: null,
+      }));
+    },
+    onViewerTogglePin: (pathName) => {
+      app.update((previous) => ({
+        ...previous,
+        viewerUi: toggleViewerPathPinned(previous.viewerUi, pathName),
+        actionMessage: null,
+      }));
+    },
     onCancelKick: () => {
       app.update((previous) => ({
         ...previous,
@@ -94,12 +151,22 @@ export async function runTui(config: Config): Promise<void> {
     return renderDashboard(state, handlers);
   });
 
-  const switchSection = (section: DashboardSection) => {
-    handlers.onSectionChange(section);
+  const switchSection = (step: number) => {
+    handlers.onSectionChange(
+      cycleDashboardSection(stateRef.current.activeSection, step),
+    );
   };
 
   const requestKick = () => {
     if (stateRef.current.confirmKick) {
+      return;
+    }
+
+    if (!isPublisherSection(stateRef.current.activeSection)) {
+      app.update((previous) => ({
+        ...previous,
+        actionMessage: "Select a publisher path to kick",
+      }));
       return;
     }
 
@@ -120,6 +187,14 @@ export async function runTui(config: Config): Promise<void> {
   };
 
   const watchSelected = () => {
+    if (!isPublisherSection(stateRef.current.activeSection)) {
+      app.update((previous) => ({
+        ...previous,
+        actionMessage: "Select a publisher path to watch",
+      }));
+      return;
+    }
+
     const selected = getSelectedRow(stateRef.current);
     if (!selected) {
       app.update((previous) => ({
@@ -149,6 +224,32 @@ export async function runTui(config: Config): Promise<void> {
     }
   };
 
+  const toggleSelectedViewerPathCollapse = () => {
+    const pathName = stateRef.current.viewerUi.selectedPathName;
+    if (!pathName) {
+      app.update((previous) => ({
+        ...previous,
+        actionMessage: "Select a path to collapse",
+      }));
+      return;
+    }
+
+    handlers.onViewerToggleCollapse(pathName);
+  };
+
+  const toggleSelectedViewerPathPin = () => {
+    const pathName = stateRef.current.viewerUi.selectedPathName;
+    if (!pathName) {
+      app.update((previous) => ({
+        ...previous,
+        actionMessage: "Select a path to pin",
+      }));
+      return;
+    }
+
+    handlers.onViewerTogglePin(pathName);
+  };
+
   app.keys({
     q: () => {
       running = false;
@@ -156,13 +257,13 @@ export async function runTui(config: Config): Promise<void> {
     },
     left: {
       handler: () => {
-        switchSection("enforced");
+        switchSection(-1);
       },
       when: (ctx) => ctx.state.confirmKick === null,
     },
     right: {
       handler: () => {
-        switchSection("other");
+        switchSection(1);
       },
       when: (ctx) => ctx.state.confirmKick === null,
     },
@@ -177,6 +278,20 @@ export async function runTui(config: Config): Promise<void> {
         requestKick();
       },
       when: (ctx) => ctx.state.confirmKick === null,
+    },
+    c: {
+      handler: () => {
+        toggleSelectedViewerPathCollapse();
+      },
+      when: (ctx) =>
+        ctx.state.confirmKick === null && ctx.state.activeSection === "viewers",
+    },
+    p: {
+      handler: () => {
+        toggleSelectedViewerPathPin();
+      },
+      when: (ctx) =>
+        ctx.state.confirmKick === null && ctx.state.activeSection === "viewers",
     },
   });
 
@@ -205,6 +320,7 @@ export async function runTui(config: Config): Promise<void> {
           snapshot,
           lastUpdatedMs: Date.now(),
           selectedKeys: pruneSelections(previous.selectedKeys, snapshot),
+          viewerUi: pruneViewerUi(previous.viewerUi, snapshot.viewers),
           confirmKick:
             previous.confirmKick &&
             [...snapshot.enforced, ...snapshot.other].some(

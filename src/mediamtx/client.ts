@@ -1,13 +1,42 @@
-import { KICK_ENDPOINTS, PATHS_PAGE_SIZE } from "../constants.ts";
+import {
+  DEPRECATED_API_PATHS,
+  KICK_ENDPOINTS,
+  PATHS_LIST,
+  PATHS_PAGE_SIZE,
+  RTMP_CONNS_LIST,
+  RTMPS_CONNS_LIST,
+  RTSP_SESSIONS_LIST,
+  RTSPS_SESSIONS_LIST,
+} from "../constants.ts";
 import type { ApiAuth } from "../config.ts";
 import type {
   ErrorResponse,
   OkResponse,
+  PaginatedListResponse,
   Path,
-  PathListResponse,
   PathSource,
+  RtmpConn,
+  RtspSession,
 } from "./types.ts";
 import type { HeadersInit } from "bun";
+
+export function buildApiUrl(baseUrl: string, endpoint: string): URL {
+  const normalizedBase = baseUrl.replace(/\/$/, "");
+  const normalizedEndpoint = endpoint.startsWith("/")
+    ? endpoint
+    : `/${endpoint}`;
+
+  if (normalizedBase.endsWith("/v3") && normalizedEndpoint.startsWith("/v3/")) {
+    return new URL(`${normalizedBase}${normalizedEndpoint.slice(3)}`);
+  }
+
+  return new URL(`${normalizedBase}${normalizedEndpoint}`);
+}
+
+function endpointCandidates(endpoint: string): string[] {
+  const deprecated = DEPRECATED_API_PATHS[endpoint];
+  return deprecated ? [endpoint, deprecated] : [endpoint];
+}
 
 export class MediaMtxClient {
   constructor(
@@ -38,24 +67,27 @@ export class MediaMtxClient {
     });
   }
 
-  async listPaths(): Promise<Path[]> {
-    const paths: Path[] = [];
+  private async listPaginatedOnce<T>(
+    endpoint: string,
+    label: string,
+  ): Promise<T[]> {
+    const items: T[] = [];
     let page = 0;
 
     while (true) {
-      const url = new URL("/v3/paths/list", this.baseUrl);
+      const url = buildApiUrl(this.baseUrl, endpoint);
       url.searchParams.set("page", String(page));
       url.searchParams.set("itemsPerPage", String(PATHS_PAGE_SIZE));
 
       const response = await this.request(url);
       if (!response.ok) {
         throw new Error(
-          `paths/list failed: ${response.status} ${response.statusText}${authHint(response.status)}`,
+          `${label} failed: ${response.status} ${response.statusText}${authHint(response.status)}`,
         );
       }
 
-      const body = (await response.json()) as PathListResponse;
-      paths.push(...body.items);
+      const body = (await response.json()) as PaginatedListResponse<T>;
+      items.push(...body.items);
 
       page += 1;
       if (page >= body.pageCount) {
@@ -63,7 +95,74 @@ export class MediaMtxClient {
       }
     }
 
-    return paths;
+    return items;
+  }
+
+  private async listPaginated<T>(
+    endpoint: string,
+    label: string,
+    optional = false,
+  ): Promise<T[]> {
+    const candidates = endpointCandidates(endpoint);
+
+    for (const [index, candidate] of candidates.entries()) {
+      const isLastCandidate = index === candidates.length - 1;
+
+      try {
+        return await this.listPaginatedOnce<T>(candidate, label);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        const is404 = message.includes("404");
+
+        if (is404 && !isLastCandidate) {
+          continue;
+        }
+
+        if (is404 && optional) {
+          return [];
+        }
+
+        throw error;
+      }
+    }
+
+    return [];
+  }
+
+  async listPaths(): Promise<Path[]> {
+    return this.listPaginated<Path>(PATHS_LIST, "paths/list");
+  }
+
+  async listRtspSessions(): Promise<RtspSession[]> {
+    return this.listPaginated<RtspSession>(
+      RTSP_SESSIONS_LIST,
+      "rtsp/sessions/list",
+      true,
+    );
+  }
+
+  async listRtspsSessions(): Promise<RtspSession[]> {
+    return this.listPaginated<RtspSession>(
+      RTSPS_SESSIONS_LIST,
+      "rtsps/sessions/list",
+      true,
+    );
+  }
+
+  async listRtmpConns(): Promise<RtmpConn[]> {
+    return this.listPaginated<RtmpConn>(
+      RTMP_CONNS_LIST,
+      "rtmp/conns/list",
+      true,
+    );
+  }
+
+  async listRtmpsConns(): Promise<RtmpConn[]> {
+    return this.listPaginated<RtmpConn>(
+      RTMPS_CONNS_LIST,
+      "rtmps/conns/list",
+      true,
+    );
   }
 
   async kickPublisher(source: PathSource): Promise<void> {
@@ -72,22 +171,39 @@ export class MediaMtxClient {
       throw new Error(`no kick endpoint for source type "${source.type}"`);
     }
 
-    const url = new URL(`${endpoint}/${source.id}`, this.baseUrl);
-    const response = await this.request(url, { method: "POST" });
+    const candidates = endpointCandidates(endpoint);
+    let lastError: Error | null = null;
 
-    if (!response.ok) {
+    for (const [index, candidate] of candidates.entries()) {
+      const isLastCandidate = index === candidates.length - 1;
+      const url = buildApiUrl(this.baseUrl, `${candidate}/${source.id}`);
+      const response = await this.request(url, { method: "POST" });
+
+      if (response.ok) {
+        const body = (await response.json()) as OkResponse;
+        if (body.status !== "ok") {
+          throw new Error(`unexpected kick response: ${JSON.stringify(body)}`);
+        }
+        return;
+      }
+
       const body = (await response.json().catch(() => null)) as
         | ErrorResponse
         | null;
       const detail = body?.error ?? response.statusText;
-      throw new Error(
+      lastError = new Error(
         `kick failed (${response.status}): ${detail}${authHint(response.status)}`,
       );
+
+      if (response.status === 404 && !isLastCandidate) {
+        continue;
+      }
+
+      throw lastError;
     }
 
-    const body = (await response.json()) as OkResponse;
-    if (body.status !== "ok") {
-      throw new Error(`unexpected kick response: ${JSON.stringify(body)}`);
+    if (lastError) {
+      throw lastError;
     }
   }
 }

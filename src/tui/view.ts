@@ -1,11 +1,22 @@
 import { ui } from "@rezi-ui/core";
 import { formatBitrate } from "../bitrate.ts";
-import type { SessionRow } from "../poll.ts";
-import type { DashboardSection, DashboardState } from "./state.ts";
+import type { SessionRow, ViewerGroup, ViewerRow } from "../poll.ts";
+import {
+  flattenViewers,
+  isViewerPathCollapsed,
+  isViewerPathPinned,
+  prepareViewerGroups,
+  type DashboardSection,
+  type DashboardState,
+} from "./state.ts";
 
 export type DashboardHandlers = {
   onSectionChange: (section: DashboardSection) => void;
   onSelectRow: (section: DashboardSection, rowKey: string | null) => void;
+  onViewerFilterChange: (query: string) => void;
+  onViewerSelectPath: (pathName: string) => void;
+  onViewerToggleCollapse: (pathName: string) => void;
+  onViewerTogglePin: (pathName: string) => void;
   onCancelKick: () => void;
   onConfirmKick: () => void;
 };
@@ -108,6 +119,128 @@ function sessionTable(
   });
 }
 
+function estimateViewerGroupHeight(
+  group: ViewerGroup,
+  collapsed: boolean,
+): number {
+  if (collapsed) {
+    return 2;
+  }
+
+  return 3 + group.readers.length;
+}
+
+function viewerGroupHeader(
+  group: ViewerGroup,
+  collapsed: boolean,
+  pinned: boolean,
+  focused: boolean,
+) {
+  const markers = [
+    pinned ? "*" : " ",
+    collapsed ? "[+]" : "[-]",
+    focused ? ">" : " ",
+  ].join("");
+  const outboundLabel =
+    group.estimatedOutboundBps === null
+      ? "est —"
+      : `est ${formatBitrate(group.estimatedOutboundBps)}`;
+  const publisherLabel =
+    group.publisherBitrateBps === null
+      ? "src —"
+      : `src ${formatBitrate(group.publisherBitrateBps)}`;
+
+  return ui.text(
+    `${markers} ${group.pathName} (${group.readers.length} viewer${group.readers.length === 1 ? "" : "s"}, ${publisherLabel}, ${outboundLabel})`,
+    { style: focused || pinned ? { bold: true } : undefined },
+  );
+}
+
+function viewerReadersTable(group: ViewerGroup) {
+  return ui.table({
+    id: `viewers-table-${group.pathName}`,
+    focusable: false,
+    columns: [
+      { key: "readerType", header: "Protocol", width: 14 },
+      { key: "readerId", header: "ID", flex: 2 },
+      {
+        key: "remoteAddr",
+        header: "Remote",
+        flex: 1,
+        render: (value) => ui.text(typeof value === "string" ? value : "—"),
+      },
+    ],
+    data: group.readers,
+    getRowKey: (row: ViewerRow) => row.rowKey,
+    virtualized: group.readers.length > 20,
+    border: "single",
+  });
+}
+
+function viewersPanel(state: DashboardState, handlers: DashboardHandlers) {
+  const { snapshot, viewerUi } = state;
+  const preparedGroups = prepareViewerGroups(snapshot.viewers, viewerUi);
+  const selectedIndex = preparedGroups.findIndex(
+    (group) => group.pathName === viewerUi.selectedPathName,
+  );
+  const totalPathCount = snapshot.viewers.length;
+  const serverOutboundLabel =
+    snapshot.estimatedServerOutboundBps === null
+      ? "est server outbound —"
+      : `est server outbound ${formatBitrate(snapshot.estimatedServerOutboundBps)}`;
+
+  if (totalPathCount === 0) {
+    return ui.text("No connected viewers");
+  }
+
+  return ui.column({ gap: 1, flex: 1 }, [
+    ui.input({
+      id: "viewer-filter-input",
+      value: viewerUi.filterQuery,
+      placeholder: "Filter paths...",
+      onInput: (value) => {
+        handlers.onViewerFilterChange(value);
+      },
+    }),
+    ui.text(
+      `${preparedGroups.length}/${totalPathCount} paths | ${serverOutboundLabel} | * pin | c collapse | p pin`,
+    ),
+    preparedGroups.length === 0
+      ? ui.text("No paths match filter")
+      : ui.virtualList({
+          id: "viewer-path-list",
+          flex: 1,
+          items: preparedGroups,
+          estimateItemHeight: (group) =>
+            estimateViewerGroupHeight(
+              group,
+              isViewerPathCollapsed(viewerUi, group.pathName),
+            ),
+          ensureVisibleIndex: selectedIndex >= 0 ? selectedIndex : undefined,
+          renderItem: (group, _index, focused) => {
+            const collapsed = isViewerPathCollapsed(viewerUi, group.pathName);
+            const pinned = isViewerPathPinned(viewerUi, group.pathName);
+
+            return ui.box(
+              {
+                border: focused ? "heavy" : "single",
+                p: 1,
+              },
+              collapsed
+                ? [viewerGroupHeader(group, collapsed, pinned, focused)]
+                : [
+                    viewerGroupHeader(group, collapsed, pinned, focused),
+                    viewerReadersTable(group),
+                  ],
+            );
+          },
+          onSelect: (group) => {
+            handlers.onViewerSelectPath(group.pathName);
+          },
+        }),
+  ]);
+}
+
 function kickConfirmDialog(
   row: SessionRow,
   handlers: DashboardHandlers,
@@ -145,12 +278,32 @@ export function renderDashboard(
   const limitLabel = formatBitrate(config.maxBitrateBps);
   const pollLabel = `${config.pollIntervalMs / 1000}s`;
   const errorText = snapshot.pollError ?? "";
-  const selectedRow = snapshot.enforced
+  const viewerRows = flattenViewers(snapshot);
+  const selectedPublisher = snapshot.enforced
     .concat(snapshot.other)
     .find((row) => row.name === selectedKeys[activeSection]);
-  const selectedLabel = selectedRow?.name ?? "none";
+  const selectedLabel =
+    activeSection === "viewers"
+      ? (state.viewerUi.selectedPathName ?? "none")
+      : (selectedPublisher?.name ?? "none");
+  const viewerCount = viewerRows.length;
+  const statusHints =
+    activeSection === "viewers"
+      ? [
+          ui.text("↑/↓ path"),
+          ui.text("c collapse"),
+          ui.text("p pin"),
+          ui.text("Tab filter"),
+          ui.text("q quit"),
+        ]
+      : [
+          ui.text("←/→ section"),
+          ui.text("w watch"),
+          ui.text("k kick"),
+          ui.text("q quit"),
+        ];
 
-  const mainContent = ui.column({ gap: 1, p: 1 }, [
+  const mainContent = ui.column({ gap: 1, p: 1, flex: 1 }, [
     ui.text("mtx-watcher", { style: { bold: true } }),
     ui.statusBar({
       id: "status-bar",
@@ -162,10 +315,7 @@ export function renderDashboard(
       ],
       right: [
         ui.text(`updated ${formatTimestamp(lastUpdatedMs)}`),
-        ui.text("←/→ section"),
-        ui.text("w watch"),
-        ui.text("k kick"),
-        ui.text("q quit"),
+        ...statusHints,
       ],
     }),
     ...(state.actionMessage
@@ -187,34 +337,44 @@ export function renderDashboard(
         snapshot.other.length,
         activeSection,
       ),
+      sectionTab(
+        "viewers",
+        "Viewers",
+        viewerCount,
+        activeSection,
+      ),
     ]),
     ui.text(`selected: ${selectedLabel}`),
-    ui.focusZone({ id: "section-focus-zone" }, [
-      activeSection === "enforced"
-        ? ui.card({ title: "Enforced" }, [
-            sessionTable(
-              "enforced-table",
-              "enforced",
-              snapshot.enforced,
-              config.maxBitrateBps,
-              true,
-              selectedKeys.enforced,
-              activeSection,
-              handlers,
-            ),
-          ])
-        : ui.card({ title: "Other publishers" }, [
-            sessionTable(
-              "other-table",
-              "other",
-              snapshot.other,
-              config.maxBitrateBps,
-              false,
-              selectedKeys.other,
-              activeSection,
-              handlers,
-            ),
-          ]),
+    ui.box({ flex: 1 }, [
+      ui.focusZone({ id: "section-focus-zone" }, [
+        activeSection === "enforced"
+          ? ui.card({ title: "Enforced" }, [
+              sessionTable(
+                "enforced-table",
+                "enforced",
+                snapshot.enforced,
+                config.maxBitrateBps,
+                true,
+                selectedKeys.enforced,
+                activeSection,
+                handlers,
+              ),
+            ])
+          : activeSection === "other"
+            ? ui.card({ title: "Other publishers" }, [
+                sessionTable(
+                  "other-table",
+                  "other",
+                  snapshot.other,
+                  config.maxBitrateBps,
+                  false,
+                  selectedKeys.other,
+                  activeSection,
+                  handlers,
+                ),
+              ])
+            : ui.card({ title: "Viewers" }, [viewersPanel(state, handlers)]),
+      ]),
     ]),
   ]);
 
