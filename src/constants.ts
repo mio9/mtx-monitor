@@ -57,3 +57,9 @@ export const RTSP_SESSIONS_LIST = "/v3/rtsp/sessions/list";
 export const RTSPS_SESSIONS_LIST = "/v3/rtsps/sessions/list";
 export const RTMP_CONNS_LIST = "/v3/rtmp/conns/list";
 export const RTMPS_CONNS_LIST = "/v3/rtmps/conns/list";
+
+/** Visible prefix length for session UUIDs in the viewers tab. */
+export const VIEWER_SESSION_ID_PREFIX_LENGTH = 8;
+
+/** Max session rows shown per path before the list scrolls. */
+export const VIEWER_SESSION_LIST_MAX_HEIGHT = 8;

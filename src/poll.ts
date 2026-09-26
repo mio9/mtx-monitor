@@ -2,6 +2,7 @@ import type { BitrateTracker } from "./bitrate.ts";
 import {
   HIDDEN_READER_TYPE,
   PLAYBACK_SESSION_STATE,
+  VIEWER_SESSION_ID_PREFIX_LENGTH,
 } from "./constants.ts";
 import type { Path, PathReaderType, RtmpConn, RtspSession } from "./mediamtx/types.ts";
 import { splitPublishingPaths, type PublishingPath } from "./paths.ts";
@@ -29,7 +30,14 @@ export type ViewerRow = {
   pathName: string;
   readerType: string;
   readerId: string;
-  remoteAddr?: string;
+  sessionIdPrefix: string;
+  remoteAddr: string;
+  outboundBytes: number | null;
+};
+
+type SessionDetails = {
+  remoteAddr: string;
+  outboundBytes: number;
 };
 
 export type ViewerGroup = {
@@ -138,21 +146,70 @@ function sumEstimatedOutbound(
   return hasEstimate ? total : null;
 }
 
-function playbackSessionsToViewerRows(
-  source: PlaybackSessionSource,
-): ViewerRow[] {
-  return source.sessions
-    .filter(
-      (session) =>
-        session.state === PLAYBACK_SESSION_STATE && session.path.length > 0,
-    )
-    .map((session) => ({
-      rowKey: `${session.path}:${source.readerType}:${session.id}`,
-      pathName: session.path,
-      readerType: source.readerType,
-      readerId: session.id,
-      remoteAddr: session.remoteAddr,
-    }));
+function sessionDetailsKey(readerType: string, readerId: string): string {
+  return `${readerType}:${readerId}`;
+}
+
+function sessionIdPrefix(readerId: string): string {
+  return readerId.slice(0, VIEWER_SESSION_ID_PREFIX_LENGTH);
+}
+
+function buildSessionDetailsMap(
+  playbackSources: readonly PlaybackSessionSource[],
+): Map<string, SessionDetails> {
+  const detailsBySession = new Map<string, SessionDetails>();
+
+  for (const source of playbackSources) {
+    for (const session of source.sessions) {
+      if (
+        session.state !== PLAYBACK_SESSION_STATE ||
+        session.path.length === 0
+      ) {
+        continue;
+      }
+
+      detailsBySession.set(
+        sessionDetailsKey(source.readerType, session.id),
+        {
+          remoteAddr: session.remoteAddr,
+          outboundBytes: session.outboundBytes,
+        },
+      );
+    }
+  }
+
+  return detailsBySession;
+}
+
+function buildViewerRow(
+  pathName: string,
+  readerType: string,
+  readerId: string,
+  sessionDetails: ReadonlyMap<string, SessionDetails>,
+): ViewerRow {
+  const details = sessionDetails.get(sessionDetailsKey(readerType, readerId));
+
+  return {
+    rowKey: `${pathName}:${readerType}:${readerId}`,
+    pathName,
+    readerType,
+    readerId,
+    sessionIdPrefix: sessionIdPrefix(readerId),
+    remoteAddr: details?.remoteAddr ?? "—",
+    outboundBytes: details?.outboundBytes ?? null,
+  };
+}
+
+function mergeViewerRows(
+  existing: ViewerRow,
+  incoming: ViewerRow,
+): ViewerRow {
+  return {
+    ...existing,
+    remoteAddr:
+      incoming.remoteAddr !== "—" ? incoming.remoteAddr : existing.remoteAddr,
+    outboundBytes: incoming.outboundBytes ?? existing.outboundBytes,
+  };
 }
 
 function collectViewerGroups(
@@ -161,6 +218,7 @@ function collectViewerGroups(
   pathBitrateBps: ReadonlyMap<string, number | null>,
 ): ViewerGroup[] {
   const readersByPath = new Map<string, Map<string, ViewerRow>>();
+  const sessionDetails = buildSessionDetailsMap(playbackSources);
 
   const addReader = (reader: ViewerRow) => {
     let pathReaders = readersByPath.get(reader.pathName);
@@ -169,7 +227,11 @@ function collectViewerGroups(
       readersByPath.set(reader.pathName, pathReaders);
     }
 
-    pathReaders.set(reader.rowKey, reader);
+    const existing = pathReaders.get(reader.rowKey);
+    pathReaders.set(
+      reader.rowKey,
+      existing ? mergeViewerRows(existing, reader) : reader,
+    );
   };
 
   for (const path of paths) {
@@ -178,18 +240,29 @@ function collectViewerGroups(
         continue;
       }
 
-      addReader({
-        rowKey: `${path.name}:${reader.type}:${reader.id}`,
-        pathName: path.name,
-        readerType: reader.type,
-        readerId: reader.id,
-      });
+      addReader(
+        buildViewerRow(path.name, reader.type, reader.id, sessionDetails),
+      );
     }
   }
 
   for (const source of playbackSources) {
-    for (const reader of playbackSessionsToViewerRows(source)) {
-      addReader(reader);
+    for (const session of source.sessions) {
+      if (
+        session.state !== PLAYBACK_SESSION_STATE ||
+        session.path.length === 0
+      ) {
+        continue;
+      }
+
+      addReader(
+        buildViewerRow(
+          session.path,
+          source.readerType,
+          session.id,
+          sessionDetails,
+        ),
+      );
     }
   }
 

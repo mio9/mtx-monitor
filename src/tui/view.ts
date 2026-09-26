@@ -1,5 +1,6 @@
 import { ui } from "@rezi-ui/core";
-import { formatBitrate } from "../bitrate.ts";
+import { formatBitrate, formatBytes } from "../bitrate.ts";
+import { VIEWER_SESSION_LIST_MAX_HEIGHT } from "../constants.ts";
 import type { SessionRow, ViewerGroup, ViewerRow } from "../poll.ts";
 import {
   flattenViewers,
@@ -119,6 +120,18 @@ function sessionTable(
   });
 }
 
+function encodePathId(pathName: string): string {
+  return pathName.replace(/[^a-zA-Z0-9_-]/g, "_");
+}
+
+function viewerSessionListHeight(sessionCount: number): number {
+  if (sessionCount === 0) {
+    return 0;
+  }
+
+  return Math.min(sessionCount, VIEWER_SESSION_LIST_MAX_HEIGHT);
+}
+
 function estimateViewerGroupHeight(
   group: ViewerGroup,
   collapsed: boolean,
@@ -127,7 +140,24 @@ function estimateViewerGroupHeight(
     return 2;
   }
 
-  return 3 + group.readers.length;
+  if (group.readers.length === 0) {
+    return 4;
+  }
+
+  // Path header, session count, column headings, list viewport, box padding.
+  return 5 + viewerSessionListHeight(group.readers.length);
+}
+
+function formatViewerReaderLine(reader: ViewerRow): string {
+  const outboundLabel =
+    reader.outboundBytes === null ? "—" : formatBytes(reader.outboundBytes);
+
+  return [
+    reader.readerType.padEnd(14),
+    reader.sessionIdPrefix,
+    reader.remoteAddr,
+    outboundLabel,
+  ].join("  ");
 }
 
 function viewerGroupHeader(
@@ -156,25 +186,37 @@ function viewerGroupHeader(
   );
 }
 
-function viewerReadersTable(group: ViewerGroup) {
-  return ui.table({
-    id: `viewers-table-${group.pathName}`,
-    focusable: false,
-    columns: [
-      { key: "readerType", header: "Protocol", width: 14 },
-      { key: "readerId", header: "ID", flex: 2 },
-      {
-        key: "remoteAddr",
-        header: "Remote",
-        flex: 1,
-        render: (value) => ui.text(typeof value === "string" ? value : "—"),
-      },
-    ],
-    data: group.readers,
-    getRowKey: (row: ViewerRow) => row.rowKey,
-    virtualized: group.readers.length > 20,
-    border: "single",
-  });
+function viewerSessionList(group: ViewerGroup) {
+  const sessionCount = group.readers.length;
+  if (sessionCount === 0) {
+    return ui.text("  no sessions");
+  }
+
+  const needsScroll = sessionCount > VIEWER_SESSION_LIST_MAX_HEIGHT;
+  const sessionCountLabel = needsScroll
+    ? `  ${sessionCount} sessions (scroll for more)`
+    : `  ${sessionCount} session${sessionCount === 1 ? "" : "s"}`;
+
+  const sessionLines = group.readers.map((reader) =>
+    ui.text(formatViewerReaderLine(reader)),
+  );
+
+  return ui.column({ gap: 0 }, [
+    ui.text(sessionCountLabel, { style: { bold: true } }),
+    ui.text("  Protocol        Session  Remote              Outbound", {
+      style: { bold: true },
+    }),
+    needsScroll
+      ? ui.box(
+          {
+            id: `viewer-sessions-${encodePathId(group.pathName)}`,
+            overflow: "scroll",
+            maxHeight: VIEWER_SESSION_LIST_MAX_HEIGHT,
+          },
+          sessionLines,
+        )
+      : ui.column({ gap: 0 }, sessionLines),
+  ]);
 }
 
 function viewersPanel(state: DashboardState, handlers: DashboardHandlers) {
@@ -184,6 +226,15 @@ function viewersPanel(state: DashboardState, handlers: DashboardHandlers) {
     (group) => group.pathName === viewerUi.selectedPathName,
   );
   const totalPathCount = snapshot.viewers.length;
+  const totalSessionCount = flattenViewers(snapshot).length;
+  const visibleSessionCount = preparedGroups.reduce(
+    (sum, group) => sum + group.readers.length,
+    0,
+  );
+  const sessionCountLabel =
+    visibleSessionCount === totalSessionCount
+      ? `${totalSessionCount} sessions`
+      : `${visibleSessionCount}/${totalSessionCount} sessions`;
   const serverOutboundLabel =
     snapshot.estimatedServerOutboundBps === null
       ? "est server outbound —"
@@ -203,7 +254,7 @@ function viewersPanel(state: DashboardState, handlers: DashboardHandlers) {
       },
     }),
     ui.text(
-      `${preparedGroups.length}/${totalPathCount} paths | ${serverOutboundLabel} | * pin | c collapse | p pin`,
+      `${sessionCountLabel} | ${preparedGroups.length}/${totalPathCount} paths | ${serverOutboundLabel} | * pin | c collapse | p pin`,
     ),
     preparedGroups.length === 0
       ? ui.text("No paths match filter")
@@ -230,7 +281,7 @@ function viewersPanel(state: DashboardState, handlers: DashboardHandlers) {
                 ? [viewerGroupHeader(group, collapsed, pinned, focused)]
                 : [
                     viewerGroupHeader(group, collapsed, pinned, focused),
-                    viewerReadersTable(group),
+                    viewerSessionList(group),
                   ],
             );
           },

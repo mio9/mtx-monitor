@@ -59,6 +59,7 @@ export type RtspSession = {
   path: string;
   state: PlaybackSessionState;
   remoteAddr: string;
+  outboundBytes: number;
 };
 
 export type RtmpConn = {
@@ -66,6 +67,7 @@ export type RtmpConn = {
   path: string;
   state: PlaybackSessionState;
   remoteAddr: string;
+  outboundBytes: number;
 };
 
 export type PaginatedListResponse<T> = {
