@@ -12,18 +12,19 @@ import (
 type DashboardSection string
 
 const (
-	SectionEnforced   DashboardSection = "enforced"
-	SectionOther      DashboardSection = "other"
-	SectionViewers    DashboardSection = "viewers"
+	SectionEnforced DashboardSection = "enforced"
+	SectionOther    DashboardSection = "other"
+	SectionViewers  DashboardSection = "viewers"
+	SectionInstance DashboardSection = "instance"
 )
 
-var DASHBOARD_SECTIONS = []DashboardSection{SectionEnforced, SectionOther, SectionViewers}
+var DASHBOARD_SECTIONS = []DashboardSection{SectionEnforced, SectionOther, SectionViewers, SectionInstance}
 
 // ViewerUiState holds viewer-panel UI state.
 type ViewerUiState struct {
-	FilterQuery    string
-	CollapsedPaths []string
-	PinnedPaths    []string
+	FilterQuery      string
+	CollapsedPaths   []string
+	PinnedPaths      []string
 	SelectedPathName *string
 }
 
@@ -31,9 +32,9 @@ type ViewerUiState struct {
 type DashboardState struct {
 	Config        config.Config
 	Snapshot      poll.PollSnapshot
-	LastUpdatedMs *int64               // Unix ms, nil = never
+	LastUpdatedMs *int64 // Unix ms, nil = never
 	ActiveSection DashboardSection
-	SelectedKeys  map[string]string    // section → row name (enforced/other/viewers)
+	SelectedKeys  map[string]string // section → row name (enforced/other/viewers)
 	ConfirmKick   *poll.SessionRow
 	ActionMessage *string
 	ViewerUi      ViewerUiState
@@ -154,7 +155,7 @@ func PruneViewerUi(ui ViewerUiState, groups []poll.ViewerGroup) ViewerUiState {
 
 // IsPublisherSection returns true if section is enforced or other.
 func IsPublisherSection(section DashboardSection) bool {
-	return section != SectionViewers
+	return section == SectionEnforced || section == SectionOther
 }
 
 // CycleDashboardSection cycles through sections by step (+1 or -1).

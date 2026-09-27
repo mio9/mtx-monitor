@@ -10,6 +10,7 @@ import (
 
 	"mio9/mtx-monitor/internal/bitrate"
 	"mio9/mtx-monitor/internal/config"
+	"mio9/mtx-monitor/internal/constants"
 	"mio9/mtx-monitor/internal/mediamtx"
 	"mio9/mtx-monitor/internal/poll"
 )
@@ -19,7 +20,8 @@ func RunCLI(cfg *config.Config) error {
 	client := mediamtx.NewClient(cfg.APIURL, cfg.ApiAuth)
 	tracker := bitrate.NewTracker()
 
-	fmt.Printf("mtx-watcher started: api=%s %s %s poll=%dms limit=%s\n",
+	fmt.Printf("%s started: api=%s %s %s poll=%dms limit=%s\n",
+		constants.CommandName,
 		cfg.APIURL,
 		authLabel(cfg),
 		pathFilterLabel(cfg),
@@ -41,7 +43,7 @@ func RunCLI(cfg *config.Config) error {
 	for {
 		select {
 		case <-sigCh:
-			fmt.Println("\nmtx-watcher stopped")
+			fmt.Printf("\n%s stopped\n", constants.CommandName)
 			return nil
 		default:
 		}
@@ -52,7 +54,7 @@ func RunCLI(cfg *config.Config) error {
 		// Sleep with interruptibility.
 		select {
 		case <-sigCh:
-			fmt.Println("\nmtx-watcher stopped")
+			fmt.Printf("\n%s stopped\n", constants.CommandName)
 			return nil
 		case <-timeAfterMs(cfg.PollIntervalMs):
 		}

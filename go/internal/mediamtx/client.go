@@ -155,6 +155,26 @@ func (c *Client) listPaginated[T any](ctx context.Context, endpoint string, labe
 	return []T{}, nil
 }
 
+// Info fetches version and start time for the connected MediaMTX instance.
+func (c *Client) Info(ctx context.Context) (Info, error) {
+	u := c.buildURL(constants.InfoEndpoint)
+	resp, err := c.request(ctx, u, http.MethodGet)
+	if err != nil {
+		return Info{}, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return Info{}, fmt.Errorf("info failed: %d %s%s", resp.StatusCode, resp.Status, authHint(resp.StatusCode))
+	}
+
+	var info Info
+	if err := json.NewDecoder(resp.Body).Decode(&info); err != nil {
+		return Info{}, fmt.Errorf("decode info: %w", err)
+	}
+	return info, nil
+}
+
 // ListPaths fetches all MediaMTX paths.
 func (c *Client) ListPaths(ctx context.Context) ([]Path, error) {
 	return c.listPaginated[Path](ctx, constants.PathsListEndpoint, "paths/list", false)

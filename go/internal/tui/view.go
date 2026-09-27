@@ -8,6 +8,7 @@ import (
 	"github.com/charmbracelet/bubbles/table"
 	"github.com/charmbracelet/lipgloss"
 	"mio9/mtx-monitor/internal/bitrate"
+	"mio9/mtx-monitor/internal/constants"
 	"mio9/mtx-monitor/internal/poll"
 )
 
@@ -46,7 +47,7 @@ func renderMain(state DashboardState, handlers Handlers) string {
 
 	// Status bar.
 	statusLeft := lipgloss.JoinHorizontal(lipgloss.Bottom,
-		lipgloss.NewStyle().Foreground(lipgloss.Color("170")).Render("mtx-watcher"),
+		lipgloss.NewStyle().Foreground(lipgloss.Color("170")).Render(constants.CommandName),
 	)
 	statusRight := lipgloss.JoinHorizontal(lipgloss.Bottom,
 		"updated "+updatedStr,
@@ -67,13 +68,14 @@ func renderMain(state DashboardState, handlers Handlers) string {
 	}
 
 	// Tabs.
-	enforcedTab := sectionTab("enforced", "Enforced", len(state.Snapshot.Enforced), state.ActiveSection)
-	otherTab := sectionTab("other", "Other publishers", len(state.Snapshot.Other), state.ActiveSection)
+	enforcedTab := sectionTab("enforced", "Enforced", len(state.Snapshot.Enforced), state.ActiveSection, true)
+	otherTab := sectionTab("other", "Other publishers", len(state.Snapshot.Other), state.ActiveSection, true)
 	viewerCount := len(FlattenViewers(state.Snapshot))
-	viewersTab := sectionTab("viewers", "Viewers", viewerCount, state.ActiveSection)
+	viewersTab := sectionTab("viewers", "Viewers", viewerCount, state.ActiveSection, true)
+	instanceTab := sectionTab("instance", "Instance", 0, state.ActiveSection, false)
 
 	tabs := lipgloss.NewStyle().Width(80).Render(
-		lipgloss.JoinHorizontal(lipgloss.Top, enforcedTab, otherTab, viewersTab),
+		lipgloss.JoinHorizontal(lipgloss.Top, enforcedTab, otherTab, viewersTab, instanceTab),
 	)
 
 	selectedLabel := ""
@@ -84,7 +86,7 @@ func renderMain(state DashboardState, handlers Handlers) string {
 		} else {
 			selectedLabel = "none"
 		}
-	} else {
+	} else if state.ActiveSection == SectionViewers {
 		if state.ViewerUi.SelectedPathName != nil {
 			selectedLabel = *state.ViewerUi.SelectedPathName
 		} else {
@@ -101,16 +103,22 @@ func renderMain(state DashboardState, handlers Handlers) string {
 		content = sessionTable("other", SectionOther, state.Snapshot.Other, state.Config.MaxBitrateBps, false, state.SelectedKeys["other"], state.ActiveSection, handlers)
 	case SectionViewers:
 		content = viewersPanel(state, handlers)
+	case SectionInstance:
+		content = instancePanel(state)
 	}
 
+	body := []string{
+		statusBar,
+		strings.Join(msgLines, "\n"),
+		tabs,
+	}
+	if state.ActiveSection != SectionInstance {
+		body = append(body, "selected: "+selectedLabel)
+	}
+	body = append(body, panelStyle.Render(content))
+
 	mainContent := lipgloss.NewStyle().Padding(1).Width(80).Render(
-		lipgloss.JoinVertical(lipgloss.Top,
-			statusBar,
-			strings.Join(msgLines, "\n"),
-			tabs,
-			"selected: "+selectedLabel,
-			panelStyle.Render(content),
-		),
+		lipgloss.JoinVertical(lipgloss.Top, body...),
 	)
 
 	return mainContent
@@ -136,12 +144,13 @@ func renderMainNoWidth(state DashboardState, handlers Handlers) string {
 		msgLines = append(msgLines, errorMsgStyle.Render(state.Snapshot.PollError))
 	}
 
-	enforcedTab := sectionTab(string(SectionEnforced), "Enforced", len(state.Snapshot.Enforced), state.ActiveSection)
-	otherTab := sectionTab(string(SectionOther), "Other publishers", len(state.Snapshot.Other), state.ActiveSection)
+	enforcedTab := sectionTab(string(SectionEnforced), "Enforced", len(state.Snapshot.Enforced), state.ActiveSection, true)
+	otherTab := sectionTab(string(SectionOther), "Other publishers", len(state.Snapshot.Other), state.ActiveSection, true)
 	viewerCount := len(FlattenViewers(state.Snapshot))
-	viewersTab := sectionTab(string(SectionViewers), "Viewers", viewerCount, state.ActiveSection)
+	viewersTab := sectionTab(string(SectionViewers), "Viewers", viewerCount, state.ActiveSection, true)
+	instanceTab := sectionTab(string(SectionInstance), "Instance", 0, state.ActiveSection, false)
 
-	tabs := lipgloss.JoinHorizontal(lipgloss.Top, enforcedTab, otherTab, viewersTab)
+	tabs := lipgloss.JoinHorizontal(lipgloss.Top, enforcedTab, otherTab, viewersTab, instanceTab)
 
 	var content string
 	switch state.ActiveSection {
@@ -151,6 +160,8 @@ func renderMainNoWidth(state DashboardState, handlers Handlers) string {
 		content = sessionTable("other", SectionOther, state.Snapshot.Other, state.Config.MaxBitrateBps, false, state.SelectedKeys["other"], state.ActiveSection, handlers)
 	case SectionViewers:
 		content = viewersPanel(state, handlers)
+	case SectionInstance:
+		content = instancePanel(state)
 	}
 
 	return lipgloss.JoinVertical(lipgloss.Top,
@@ -162,6 +173,9 @@ func renderMainNoWidth(state DashboardState, handlers Handlers) string {
 func getStatusHints(activeSection DashboardSection) string {
 	if activeSection == SectionViewers {
 		return "↑/↓ path | c collapse | p pin | Tab filter | q quit"
+	}
+	if activeSection == SectionInstance {
+		return "←/→ section | q quit"
 	}
 	return "←/→ section | w watch | k kick | q quit"
 }
@@ -196,12 +210,70 @@ func statusBadge(row poll.SessionRow, enforced bool) string {
 	return lipgloss.NewStyle().Padding(0, 1).Background(color).Foreground(lipgloss.Color("235")).Render(label)
 }
 
-func sectionTab(section string, label string, count int, activeSection DashboardSection) string {
+func sectionTab(section string, label string, count int, activeSection DashboardSection, showCount bool) string {
+	text := label
+	if showCount {
+		text = label + " (" + fmt.Sprintf("%d", count) + ")"
+	}
 	active := section == string(activeSection)
 	if active {
-		return tabActiveStyle.Render("▶ " + label + " (" + fmt.Sprintf("%d", count) + ")")
+		return tabActiveStyle.Render("▶ " + text)
 	}
-	return tabInactiveStyle.Render("  " + label + " (" + fmt.Sprintf("%d", count) + ")")
+	return tabInactiveStyle.Render("  " + text)
+}
+
+func instancePanel(state DashboardState) string {
+	auth := "none"
+	if state.Config.ApiAuth != nil {
+		if state.Config.ApiAuth.Scheme == "bearer" {
+			auth = "bearer"
+		} else {
+			auth = "basic user=" + state.Config.ApiAuth.Username
+		}
+	}
+
+	pathFilter := "all"
+	if state.Config.PathIncludeRegex != nil {
+		pathFilter = "/" + state.Config.PathIncludeRegex.String() + "/"
+	}
+
+	version := "—"
+	started := "—"
+	connection := "connecting"
+	if state.Snapshot.Server.Error != "" {
+		connection = "unreachable"
+	} else if state.Snapshot.Server.Version != "" {
+		version = state.Snapshot.Server.Version
+		started = formatServerStarted(state.Snapshot.Server.Started)
+		connection = "connected"
+	}
+
+	lines := []string{
+		fmt.Sprintf("%-14s%s", "API", state.Config.APIURL),
+		fmt.Sprintf("%-14s%s", "RTSP", state.Config.RTSPURL),
+		fmt.Sprintf("%-14s%s", "Auth", auth),
+		fmt.Sprintf("%-14s%s", "Version", version),
+		fmt.Sprintf("%-14s%s", "Started", started),
+		fmt.Sprintf("%-14s%dms", "Poll", state.Config.PollIntervalMs),
+		fmt.Sprintf("%-14s%s", "Limit", bitrate.FormatBitrate(state.Config.MaxBitrateBps)),
+		fmt.Sprintf("%-14s%s", "Path filter", pathFilter),
+		fmt.Sprintf("%-14s%s", "Status", connection),
+	}
+	if state.Snapshot.Server.Error != "" {
+		lines = append(lines, "", state.Snapshot.Server.Error)
+	}
+	return strings.Join(lines, "\n")
+}
+
+func formatServerStarted(started string) string {
+	if started == "" {
+		return "—"
+	}
+	parsed, err := time.Parse(time.RFC3339, started)
+	if err != nil {
+		return started
+	}
+	return parsed.Local().Format("2006-01-02 15:04:05")
 }
 
 func sessionTable(_ string, section DashboardSection, rows []poll.SessionRow, maxBps int, _ bool, _ string, activeSection DashboardSection, _ Handlers) string {

@@ -35,6 +35,9 @@ var DeprecatedAPIPaths = map[string]string{
 	"/v3/webrtc/sessions/kick": "/v3/webrtcsessions/kick",
 }
 
+// CommandName is the user-facing CLI and TUI name.
+const CommandName = "mtxmon"
+
 // Default configuration values.
 const (
 	DefaultAPIURL          = "http://127.0.0.1:9997"
@@ -53,6 +56,7 @@ const PlaybackSessionState = "read"
 
 // API endpoint paths.
 const (
+	InfoEndpoint      = "/v3/info"
 	PathsListEndpoint = "/v3/paths/list"
 	RtspSessionsList  = "/v3/rtsp/sessions/list"
 	RtspsSessionsList = "/v3/rtsps/sessions/list"

@@ -25,10 +25,10 @@ type RtspSessionAdapter struct {
 	mediamtx.RtspSession
 }
 
-func (a RtspSessionAdapter) ID() string          { return a.RtspSession.ID }
-func (a RtspSessionAdapter) Path() string        { return a.RtspSession.Path }
-func (a RtspSessionAdapter) State() string       { return string(a.RtspSession.State) }
-func (a RtspSessionAdapter) RemoteAddr() string  { return a.RtspSession.RemoteAddr }
+func (a RtspSessionAdapter) ID() string           { return a.RtspSession.ID }
+func (a RtspSessionAdapter) Path() string         { return a.RtspSession.Path }
+func (a RtspSessionAdapter) State() string        { return string(a.RtspSession.State) }
+func (a RtspSessionAdapter) RemoteAddr() string   { return a.RtspSession.RemoteAddr }
 func (a RtspSessionAdapter) OutboundBytes() int64 { return a.RtspSession.OutboundBytes }
 
 // RtmpConnAdapter wraps mediamtx.RtmpConn to implement playbackSession.
@@ -36,10 +36,10 @@ type RtmpConnAdapter struct {
 	mediamtx.RtmpConn
 }
 
-func (a RtmpConnAdapter) ID() string          { return a.RtmpConn.ID }
-func (a RtmpConnAdapter) Path() string        { return a.RtmpConn.Path }
-func (a RtmpConnAdapter) State() string       { return string(a.RtmpConn.State) }
-func (a RtmpConnAdapter) RemoteAddr() string  { return a.RtmpConn.RemoteAddr }
+func (a RtmpConnAdapter) ID() string           { return a.RtmpConn.ID }
+func (a RtmpConnAdapter) Path() string         { return a.RtmpConn.Path }
+func (a RtmpConnAdapter) State() string        { return string(a.RtmpConn.State) }
+func (a RtmpConnAdapter) RemoteAddr() string   { return a.RtmpConn.RemoteAddr }
 func (a RtmpConnAdapter) OutboundBytes() int64 { return a.RtmpConn.OutboundBytes }
 
 // SessionStatus represents the status of a publisher session.
@@ -77,19 +77,27 @@ type ViewerRow struct {
 
 // ViewerGroup groups viewer rows by path name.
 type ViewerGroup struct {
-	PathName              string
-	Readers               []ViewerRow
-	PublisherBitrateBps   *int
-	EstimatedOutboundBps  *int
+	PathName             string
+	Readers              []ViewerRow
+	PublisherBitrateBps  *int
+	EstimatedOutboundBps *int
+}
+
+// ServerInfo is the connected MediaMTX instance from /v3/info.
+type ServerInfo struct {
+	Version string
+	Started string
+	Error   string
 }
 
 // PollSnapshot is the result of a single poll cycle.
 type PollSnapshot struct {
-	Enforced                     []SessionRow
-	Other                        []SessionRow
-	Viewers                      []ViewerGroup
-	EstimatedServerOutboundBps   *int
-	PollError                    string
+	Enforced                   []SessionRow
+	Other                      []SessionRow
+	Viewers                    []ViewerGroup
+	EstimatedServerOutboundBps *int
+	PollError                  string
+	Server                     ServerInfo
 }
 
 // RunPollCycleOptions holds dependencies for a poll cycle.
@@ -144,19 +152,19 @@ func RunPollCycle(ctx context.Context, opts RunPollCycleOptions) PollSnapshot {
 
 	// If any error occurred, return poll error.
 	if err1 != nil {
-		return PollSnapshot{PollError: err1.Error()}
+		return attachServerInfo(ctx, client, PollSnapshot{PollError: err1.Error()})
 	}
 	if err2 != nil {
-		return PollSnapshot{PollError: fmt.Sprintf("rtsp sessions: %v", err2)}
+		return attachServerInfo(ctx, client, PollSnapshot{PollError: fmt.Sprintf("rtsp sessions: %v", err2)})
 	}
 	if err3 != nil {
-		return PollSnapshot{PollError: fmt.Sprintf("rtsps sessions: %v", err3)}
+		return attachServerInfo(ctx, client, PollSnapshot{PollError: fmt.Sprintf("rtsps sessions: %v", err3)})
 	}
 	if err4 != nil {
-		return PollSnapshot{PollError: fmt.Sprintf("rtmp conns: %v", err4)}
+		return attachServerInfo(ctx, client, PollSnapshot{PollError: fmt.Sprintf("rtmp conns: %v", err4)})
 	}
 	if err5 != nil {
-		return PollSnapshot{PollError: fmt.Sprintf("rtmps conns: %v", err5)}
+		return attachServerInfo(ctx, client, PollSnapshot{PollError: fmt.Sprintf("rtmps conns: %v", err5)})
 	}
 
 	// Split publishing paths.
@@ -211,12 +219,24 @@ func RunPollCycle(ctx context.Context, opts RunPollCycleOptions) PollSnapshot {
 	// Compute total estimated outbound.
 	totalOutbound := sumEstimatedOutbound(viewers)
 
-	return PollSnapshot{
-		Enforced:                     enforcedRows,
-		Other:                        otherRows,
-		Viewers:                      viewers,
-		EstimatedServerOutboundBps:   totalOutbound,
+	snapshot := PollSnapshot{
+		Enforced:                   enforcedRows,
+		Other:                      otherRows,
+		Viewers:                    viewers,
+		EstimatedServerOutboundBps: totalOutbound,
 	}
+	return attachServerInfo(ctx, client, snapshot)
+}
+
+func attachServerInfo(ctx context.Context, client *mediamtx.Client, snapshot PollSnapshot) PollSnapshot {
+	info, err := client.Info(ctx)
+	if err != nil {
+		snapshot.Server.Error = err.Error()
+		return snapshot
+	}
+	snapshot.Server.Version = info.Version
+	snapshot.Server.Started = info.Started
+	return snapshot
 }
 
 // buildSessionRow creates a SessionRow from a publishing path and bitrate.
@@ -233,12 +253,12 @@ func buildSessionRow(path paths.PublishingPath, bitrateBps *int, maxBitrateBps i
 	}
 
 	return SessionRow{
-		Name:        path.Name,
-		SourceType:  path.Source.Type,
-		SourceID:    path.Source.ID,
-		BitrateBps:  bitrateBps,
-		OverLimit:   overLimit,
-		Status:      status,
+		Name:       path.Name,
+		SourceType: path.Source.Type,
+		SourceID:   path.Source.ID,
+		BitrateBps: bitrateBps,
+		OverLimit:  overLimit,
+		Status:     status,
 	}
 }
 
@@ -364,10 +384,10 @@ func collectViewerGroups(
 		estOutbound := estimateOutboundBitrate(pubBps, len(readers))
 
 		groups = append(groups, ViewerGroup{
-			PathName:              pathName,
-			Readers:               readers,
-			PublisherBitrateBps:   pubBps,
-			EstimatedOutboundBps:  estOutbound,
+			PathName:             pathName,
+			Readers:              readers,
+			PublisherBitrateBps:  pubBps,
+			EstimatedOutboundBps: estOutbound,
 		})
 	}
 

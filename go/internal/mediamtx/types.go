@@ -93,6 +93,12 @@ type RtmpConn struct {
 	OutboundBytes int64                `json:"outboundBytes"`
 }
 
+// Info is the MediaMTX /v3/info response.
+type Info struct {
+	Version string `json:"version"`
+	Started string `json:"started"`
+}
+
 // OkResponse is a successful API response.
 type OkResponse struct {
 	Status string `json:"status"`

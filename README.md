@@ -1,4 +1,4 @@
-# mtx-watcher
+# mtx-monitor
 
 Polls MediaMTX Control API, tracks publisher bitrate from byte counters, kicks sessions over limit.
 
@@ -64,5 +64,6 @@ bun run index.ts --noui
 
 - **Enforced** — paths matched by `PATH_INCLUDE_REGEX` (or all publishers when unset). Over-limit sessions are flagged and kicked.
 - **Other publishers** — active publisher paths not matched by the regex. Shown for visibility only; over-limit sessions are flagged but not kicked.
+- **Instance** — connected MediaMTX server: API URL, auth, version, start time, poll interval, and bitrate limit.
 
 Bitrate = delta `inboundBytes` between polls. Supported publisher types: RTSP, RTMP, SRT, WebRTC.
