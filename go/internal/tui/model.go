@@ -20,8 +20,6 @@ type model struct {
 	client    *mediamtx.Client
 	tracker   *bitrate.Tracker
 	quit      chan struct{}
-	pollChan  chan poll.PollSnapshot
-	errChan   chan error
 	watchURLs []string
 }
 
@@ -31,20 +29,18 @@ func NewModel(cfg config.Config) (*model, error) {
 	tracker := bitrate.NewTracker()
 
 	m := &model{
-		state:    CreateInitialState(cfg),
-		client:   client,
-		tracker:  tracker,
-		quit:     make(chan struct{}),
-		pollChan: make(chan poll.PollSnapshot, 1),
-		errChan:  make(chan error, 1),
+		state:   CreateInitialState(cfg),
+		client:  client,
+		tracker: tracker,
+		quit:    make(chan struct{}),
 	}
 
 	return m, nil
 }
 
-// Init starts the polling goroutine.
+// Init polls once. The next poll is scheduled after that result is applied.
 func (m *model) Init() tea.Cmd {
-	return m.startPolling()
+	return m.pollCmd()
 }
 
 // Update handles incoming messages.
@@ -55,10 +51,9 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		return m, nil
 	case poll.PollSnapshot:
-		return m.applySnapshot(msg), nil
-	case *pollError:
-		m.state.Snapshot.PollError = msg.msg
-		return m, nil
+		return m.applySnapshot(msg), m.schedulePoll()
+	case pollTick:
+		return m, m.pollCmd()
 	case tea.QuitMsg:
 		m.requestQuit()
 		return m, tea.Quit
@@ -200,42 +195,26 @@ func (m *model) confirmKick() {
 	m.state.ConfirmKick = nil
 }
 
-// startPolling runs the background poll loop.
-func (m *model) startPolling() tea.Cmd {
-	return func() tea.Msg {
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
+// pollTick asks Update to start the next poll after the interval.
+type pollTick struct{}
 
-		ticker := time.NewTicker(time.Duration(m.state.Config.PollIntervalMs) * time.Millisecond)
-		defer ticker.Stop()
-
-		opts := poll.RunPollCycleOptions{
-			Client:           m.client,
-			Tracker:          m.tracker,
-			MaxBitrateBps:    m.state.Config.MaxBitrateBps,
-			PathIncludeRegex: m.state.Config.PathIncludeRegex,
-		}
-
-		for {
-			select {
-			case <-m.quit:
-				return nil
-			case <-ctx.Done():
-				return nil
-			case <-ticker.C:
-			}
-
-			snap := poll.RunPollCycle(ctx, opts)
-			if snap.PollError != "" {
-				m.errChan <- &pollError{msg: snap.PollError}
-			} else {
-				select {
-				case m.pollChan <- snap:
-				default:
-				}
-			}
-		}
+func (m *model) pollCmd() tea.Cmd {
+	opts := poll.RunPollCycleOptions{
+		Client:           m.client,
+		Tracker:          m.tracker,
+		MaxBitrateBps:    m.state.Config.MaxBitrateBps,
+		PathIncludeRegex: m.state.Config.PathIncludeRegex,
 	}
+	return func() tea.Msg {
+		return poll.RunPollCycle(context.Background(), opts)
+	}
+}
+
+func (m *model) schedulePoll() tea.Cmd {
+	interval := time.Duration(m.state.Config.PollIntervalMs) * time.Millisecond
+	return tea.Tick(interval, func(time.Time) tea.Msg {
+		return pollTick{}
+	})
 }
 
 // Handlers defines callbacks from the view layer back into the model.
@@ -298,10 +277,3 @@ func RunTUI(cfg config.Config) error {
 	_, err = p.Run()
 	return err
 }
-
-// pollError wraps a poll error message.
-type pollError struct {
-	msg string
-}
-
-func (e *pollError) Error() string { return e.msg }
