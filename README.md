@@ -1,19 +1,23 @@
-# mtx-monitor
+# mtxmon
 
-Polls MediaMTX Control API, tracks publisher bitrate from byte counters, kicks sessions over limit.
+Polls the MediaMTX Control API, tracks publisher bitrate from byte counters, and kicks sessions over the limit.
+
+Go module: `mio9/mtx-monitor` (`go/go.mod`, Go 1.27).
 
 ## Requirements
 
-MediaMTX with Control API enabled:
+MediaMTX with the Control API enabled:
 
 ```yaml
 api: yes
 apiAddress: :9997
 ```
 
+`ffplay` (from ffmpeg) is used when you watch a path. Override the binary with `WATCH_PLAYER`.
+
 ## Config
 
-Copy `.env.example` to `.env`:
+Copy `.env.example` to `.env` in the directory you run `mtxmon` from. The process loads that file from the working directory.
 
 | Variable | Default | Description |
 |----------|---------|-------------|
@@ -41,29 +45,40 @@ authInternalUsers:
 ## Run
 
 ```bash
-bun install
-bun run index.ts
+cd go
+go build -o ../mtxmon ./cmd/mtxmon
+cd ..
+./mtxmon
 ```
 
-Default launch opens a Rezi TUI dashboard.
+That opens the Bubble Tea TUI. Headless log output:
+
+```bash
+./mtxmon --noui
+```
+
+Version:
+
+```bash
+./mtxmon version
+```
 
 | Key | Action |
 |-----|--------|
-| `←` / `→` | Switch between Enforced and Other publishers sections |
-| `w` | Watch selected path with ffmpeg/ffplay |
-| `k` | Kick selected path (confirmation dialog) |
+| `←` / `→` | Switch dashboard section |
+| `w` | Watch the selected publisher with `WATCH_PLAYER` |
+| `k` | Kick the selected publisher |
+| `y` | Confirm kick |
+| `n` / `esc` | Cancel kick |
+| `c` | Collapse or expand the selected viewer path |
+| `p` | Pin or unpin the selected viewer path |
 | `q` | Quit |
-
-Headless console mode (original log output):
-
-```bash
-bun run index.ts --noui
-```
 
 ### Dashboard sections
 
 - **Enforced** — paths matched by `PATH_INCLUDE_REGEX` (or all publishers when unset). Over-limit sessions are flagged and kicked.
 - **Other publishers** — active publisher paths not matched by the regex. Shown for visibility only; over-limit sessions are flagged but not kicked.
-- **Instance** — connected MediaMTX server: API URL, auth, version, start time, poll interval, and bitrate limit.
+- **Viewers** — readers grouped by path. `c` collapses a path, `p` pins it.
+- **Instance** — connected MediaMTX server from `/v3/info`: API URL, auth, version, start time, poll interval, bitrate limit, and path filter.
 
-Bitrate = delta `inboundBytes` between polls. Supported publisher types: RTSP, RTMP, SRT, WebRTC.
+Bitrate is the delta of `inboundBytes` between polls. Kickable publisher types: RTSP, RTSPS, RTMP, RTMPS, SRT, WebRTC.
