@@ -51,7 +51,7 @@ func (m *model) Init() tea.Cmd {
 func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
-		return m.handleKey(msg), nil
+		return m.handleKey(msg)
 	case tea.WindowSizeMsg:
 		return m, nil
 	case poll.PollSnapshot:
@@ -60,7 +60,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.state.Snapshot.PollError = msg.msg
 		return m, nil
 	case tea.QuitMsg:
-		close(m.quit)
+		m.requestQuit()
 		return m, tea.Quit
 	}
 	return m, nil
@@ -72,11 +72,20 @@ func (m *model) View() string {
 	return renderDashboard(m.state, handlers)
 }
 
-// handleKey routes key presses to actions.
-func (m *model) handleKey(key tea.KeyMsg) tea.Model {
-	if key.Type == tea.KeyCtrlC || key.String() == "q" {
+func (m *model) requestQuit() {
+	select {
+	case <-m.quit:
+	default:
 		close(m.quit)
-		return m
+	}
+}
+
+// handleKey routes key presses to actions.
+
+func (m *model) handleKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if key.Type == tea.KeyCtrlC || key.String() == "q" {
+		m.requestQuit()
+		return m, tea.Quit
 	}
 
 	if m.state.ConfirmKick != nil {
@@ -88,7 +97,7 @@ func (m *model) handleKey(key tea.KeyMsg) tea.Model {
 		case "y":
 			m.confirmKick()
 		}
-		return m
+		return m, nil
 	}
 
 	switch key.String() {
@@ -128,7 +137,7 @@ func (m *model) handleKey(key tea.KeyMsg) tea.Model {
 		}
 	}
 
-	return m
+	return m, nil
 }
 
 // applySnapshot updates state with a new poll result.
