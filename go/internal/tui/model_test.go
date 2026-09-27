@@ -1,9 +1,11 @@
 package tui
 
 import (
+	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"mio9/mtx-monitor/internal/config"
 	"mio9/mtx-monitor/internal/poll"
 )
@@ -31,6 +33,28 @@ func TestQuitOnSingleQ(t *testing.T) {
 	}
 
 	app.Update(tea.QuitMsg{})
+}
+
+func TestDashboardLinesFitFrame(t *testing.T) {
+	state := CreateInitialState(config.Config{MaxBitrateBps: 5_000_000})
+	bitrateBps := 2_190_000
+	state.Snapshot.Enforced = []poll.SessionRow{{
+		Name:       "pub_13",
+		SourceType: "rtmpConn",
+		BitrateBps: &bitrateBps,
+		Status:     poll.StatusOK,
+	}}
+	updated := int64(1_758_000_000_000)
+	state.LastUpdatedMs = &updated
+	state.SelectedKeys["enforced"] = "pub_13"
+
+	const frameWidth = 70
+	rendered := renderDashboard(state, nil, frameWidth, 24)
+	for index, line := range strings.Split(rendered, "\n") {
+		if lipgloss.Width(line) > frameWidth {
+			t.Fatalf("line %d is %d columns, frame is %d: %q", index, lipgloss.Width(line), frameWidth, line)
+		}
+	}
 }
 
 func TestSnapshotUpdatesDashboard(t *testing.T) {

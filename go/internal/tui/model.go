@@ -21,6 +21,8 @@ type model struct {
 	tracker   *bitrate.Tracker
 	quit      chan struct{}
 	watchURLs []string
+	width     int
+	height    int
 }
 
 // NewModel creates a new Bubble Tea model with the given config.
@@ -49,6 +51,8 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		return m.handleKey(msg)
 	case tea.WindowSizeMsg:
+		m.width = msg.Width
+		m.height = msg.Height
 		return m, nil
 	case poll.PollSnapshot:
 		return m.applySnapshot(msg), m.schedulePoll()
@@ -64,7 +68,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 // View renders the dashboard.
 func (m *model) View() string {
 	handlers := &tuiHandlers{model: m}
-	return renderDashboard(m.state, handlers)
+	return renderDashboard(m.state, handlers, m.width, m.height)
 }
 
 func (m *model) requestQuit() {
