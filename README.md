@@ -42,12 +42,55 @@ authInternalUsers:
       - action: api
 ```
 
-## Run
+## Development and building
+
+Source lives in `go/`. The module path is `mio9/mtx-monitor`. `go/go.mod` requires Go 1.27.
+
+```
+go/
+  cmd/mtxmon/          CLI entry (Cobra)
+  internal/cli/        headless --noui loop
+  internal/config/     .env and environment loading
+  internal/constants/  defaults, API paths, command name
+  internal/mediamtx/   Control API client
+  internal/poll/       poll cycle and dashboard snapshot
+  internal/bitrate/    byte-counter bitrate tracking
+  internal/paths/      publisher path filtering
+  internal/tui/        Bubble Tea dashboard
+  internal/watch/      launch the watch player
+```
+
+Build a binary at the repo root. `mtxmon` reads `.env` from the process working directory, so run it from the directory that contains `.env`:
 
 ```bash
 cd go
 go build -o ../mtxmon ./cmd/mtxmon
 cd ..
+./mtxmon
+```
+
+`go/mtxmon` and a repo-root `mtxmon` are build outputs. They are gitignored.
+
+While iterating, run from the module directory. That process looks for `.env` in `go/`, so copy or symlink the repo-root `.env` there if you need it:
+
+```bash
+cd go
+go run ./cmd/mtxmon
+go run ./cmd/mtxmon --noui
+```
+
+Tests:
+
+```bash
+cd go
+go test ./...
+```
+
+## Run
+
+From the directory that contains `.env`:
+
+```bash
 ./mtxmon
 ```
 
