@@ -150,8 +150,8 @@ func statusBar(inner int, updated string, hints string) string {
 }
 
 func sectionTabs(state DashboardState, inner int) string {
-	enforcedTab := sectionTab("enforced", "Enforced", len(state.Snapshot.Enforced), state.ActiveSection, true)
-	otherTab := sectionTab("other", "Other", len(state.Snapshot.Other), state.ActiveSection, true)
+	enforcedTab := sectionTab("enforced", "Public", len(state.Snapshot.Enforced), state.ActiveSection, true)
+	otherTab := sectionTab("other", "Private", len(state.Snapshot.Other), state.ActiveSection, true)
 	viewerCount := len(FlattenViewers(state.Snapshot))
 	viewersTab := sectionTab("viewers", "Viewers", viewerCount, state.ActiveSection, true)
 	instanceTab := sectionTab("instance", "Instance", 0, state.ActiveSection, false)
@@ -170,8 +170,8 @@ func compactTabs(state DashboardState) string {
 		count   int
 		show    bool
 	}{
-		{SectionEnforced, "Enforced", len(state.Snapshot.Enforced), true},
-		{SectionOther, "Other", len(state.Snapshot.Other), true},
+		{SectionEnforced, "Public", len(state.Snapshot.Enforced), true},
+		{SectionOther, "Private", len(state.Snapshot.Other), true},
 		{SectionViewers, "Viewers", len(FlattenViewers(state.Snapshot)), true},
 		{SectionInstance, "Instance", 0, false},
 	}

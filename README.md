@@ -119,8 +119,8 @@ Version:
 
 ### Dashboard sections
 
-- **Enforced** — paths matched by `PATH_INCLUDE_REGEX` (or all publishers when unset). Over-limit sessions are flagged and kicked.
-- **Other publishers** — active publisher paths not matched by the regex. Shown for visibility only; over-limit sessions are flagged but not kicked.
+- **Public** — paths matched by `PATH_INCLUDE_REGEX` (or all publishers when unset). Over-limit sessions are flagged and kicked.
+- **Private** — active publisher paths not matched by the regex. Shown for visibility only; over-limit sessions are flagged but not kicked.
 - **Viewers** — readers grouped by path. `c` collapses a path, `p` pins it.
 - **Instance** — connected MediaMTX server from `/v3/info`: API URL, auth, version, start time, poll interval, bitrate limit, and path filter.
 
